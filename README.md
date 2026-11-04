@@ -2,20 +2,20 @@
 
 **Probing the Knowledge-Application Gap in Multimodal Culinary Reasoning**
 
-**Accepted to Findings of EMNLP 2026.**
+[Paper](https://arxiv.org/abs/2609.03526) · [Dataset](https://huggingface.co/datasets/brainz/CulturalMenuBench)
 
-📄 **[Paper (arXiv)](https://arxiv.org/abs/2609.03526)** · **[PDF](https://arxiv.org/pdf/2609.03526)**
+Multimodal culinary questions connecting dish appearance and cooking-process evidence
+with dish names, ingredients, preparation, and cuisine knowledge.
 
-A multimodal culinary benchmark connecting dish appearance and cooking-process
-evidence with dish names, ingredients, preparation, and cuisine knowledge.
+This repository is the lightweight code and documentation companion for the
+`menubench-data-v3-candidate-20261021` dataset. Images and complete question/answer
+files are distributed separately, not committed to this repository.
 
-## Release status
+**Release status:** the v3 dataset is hosted on Hugging Face. Code license, final
+citation, data redistribution permissions, and a contact/removal-request channel
+still require author confirmation. See [release status](docs/RELEASE_STATUS.md).
 
-The data v3 candidate has been prepared locally. Public dataset download links
-will be added here when available. This repository contains the companion tools;
-it does not yet provide a public dataset download or new evaluation results.
-
-## Dataset
+## Dataset scope
 
 | Suite | Questions |
 |---|---:|
@@ -25,29 +25,68 @@ it does not yet provide a public dataset download or new evaluation results.
 | Chinese subregion | 354 |
 | **Total** | **11,048** |
 
-The candidate contains 587 main dishes and 12,060 image IDs resolving to 12,057
-physical images. Reviewed display names and native-resolution JPEG images are
-packaged in one metadata ZIP and two image ZIPs, approximately 724 MiB in total.
-Download all three archives when published and extract them into the same empty
-`data/` directory; do not concatenate ZIPs.
+587 main dishes; 12,060 image IDs resolving to 12,057 physical images.
+The v3 candidate uses reviewed display names and native-resolution JPEG images.
+Three download archives total approximately 724 MiB: one metadata ZIP and two image ZIPs.
+Download **all three** and extract into the same empty directory; do not concatenate ZIPs.
+See [data format](docs/DATA_FORMAT.md), [dataset card](docs/DATA_CARD.md), and
+[version notes](docs/VERSION_NOTES.md).
 
-## Requirements
+## Quick start
 
-Python 3.9+ and the standard library only. These tools do not call models or APIs.
-Run the following commands from the repository root after downloading the data.
+Python 3.9+ and the standard library only. No installation, API keys, network requests,
+model inference, or paid API calls are needed to run these tools.
+Run commands from the repository root.
 
-## Verify and load
+### 1. Try the scorer without downloading data
 
 ```bash
+python3 scripts/score.py \
+  --manifest examples/synthetic_manifest.jsonl \
+  --predictions examples/synthetic_predictions.jsonl
+```
+
+Expected result: 2/3 correct (66.67%). These invented rows are a format demonstration,
+not real benchmark examples or paper results.
+
+### 2. Verify downloads and extracted data
+
+Download the three archives from the
+[Hugging Face dataset repository](https://huggingface.co/datasets/brainz/CulturalMenuBench).
+With the Hugging Face CLI:
+
+```bash
+hf download brainz/CulturalMenuBench --repo-type dataset --local-dir downloads
+```
+
+The repository root `SHA256SUMS` will be placed in `downloads/` as well. Verify,
+then extract:
+
+```bash
+python3 scripts/verify_downloads.py --directory downloads
+mkdir -p data
+for archive in downloads/MenuBench_*_v3_candidate_20261021*.zip; do
+  unzip -q "$archive" -d data
+done
 python3 scripts/verify_downloads.py --directory data
+```
+
+The dataset `SHA256SUMS` covers the three ZIPs, `README.md` and `RIGHTS.md`. The
+dataset is distributed as archives; the Hugging Face Dataset Viewer and
+`datasets.load_dataset` are not supported.
+
+### 3. Validate a question suite
+
+```bash
 python3 scripts/load_dataset.py \
   --data-root data --questions questions/mc-chinese.jsonl
 ```
 
-Use `binary`, `mc-foreign`, or `subregion` in place of `mc-chinese` for other suites.
-Image IDs must be resolved through `media_manifest.jsonl`, not guessed filenames.
+This checks question/image joins and the byte length and SHA256 of referenced images.
+Use `--limit 10` for a quick sample. Repeat for `binary`, `mc-foreign`, and `subregion`
+to check the other suites. Full download checksums cover every packaged file.
 
-## Prepare model inputs
+### 4. Prepare model inputs
 
 ```bash
 mkdir -p outputs
@@ -56,54 +95,55 @@ python3 scripts/prepare_inputs.py \
   --limit 10 --image-mode path --output outputs/requests.jsonl
 ```
 
-The exporter preserves text/image ordering and outputs question IDs, task names,
-and user messages only, without ground-truth answers or recipe metadata. It does
-not run inference. Adapt the messages to your chosen model and save its predictions.
-`path` mode emits local absolute image paths, not remotely accessible URLs.
-`--image-mode data-url` embeds images as base64 for APIs that support this format.
-Never send whole question records, answer manifests or recipe metadata to a model.
+The exporter preserves the original ordered text/image blocks and includes only
+`item_id`, `task_name`, and user `messages`: **no ground-truth answers or recipe metadata**.
+`path` mode emits local absolute image paths for your own local-model adapter; these
+paths are not remotely accessible URLs. `--image-mode data-url` embeds image bytes as
+base64 data URLs, if supported by your chosen API. This is a transport example, not
+a provider-specific inference runner or a reproduction of historical model settings.
+Never feed the full question row, answer manifests, or recipe metadata to a model.
 
-## Save and score predictions
+### 5. Save predictions and score
 
-Save one JSON object per question in a prediction JSONL file. Required fields are
-`item_id`, `task_name`, and `model_answer`. For example, the following is an invented
-format example, not a benchmark prediction:
+Your model adapter should save one JSON object per line:
 
 ```json
-{"item_id":"synthetic:example","task_name":"synthetic_mc","model_answer":"A"}
+{"item_id":"mc:chinese:0000","task_name":"dish_image2dish_name","model_answer":"C"}
 ```
 
-For actual evaluation, preserve the dataset's exact IDs and task names. MC answers
-must be `A`, `B`, `C`, or `D`; binary answers must be `是` or `否`.
+The line above illustrates the schema only, not a new model output. Score predictions
+for a **complete suite**, matching its IDs and task names:
 
 ```bash
 python3 scripts/score.py \
   --manifest data/manifests/mc-chinese.jsonl \
-  --predictions outputs/mc-chinese_predictions.jsonl
+  --predictions predictions/mc-chinese.jsonl
 ```
 
-Predictions must cover the complete suite. A 10-question export is only a smoke test
-and cannot be scored against a full-suite manifest. Empty answers count as incorrect;
-missing/extra IDs, duplicate IDs, task mismatches and nonempty out-of-domain answers
-fail validation. The scorer trims whitespace and uppercases letters, but does not
-extract answers from explanations. Report suite/task scores with the dataset version.
+MC predictions are `A`/`B`/`C`/`D`; binary predictions are `是`/`否`.
+Empty answers count as incorrect. Duplicate IDs, missing/extra IDs, task mismatches,
+and nonempty out-of-domain answers fail rather than silently changing the denominator.
+The scorer trims whitespace and uppercases letters; it does not extract answers from
+free-form explanations. Report per-suite and per-task results with the dataset version.
+The 10-question input-export example cannot be scored against a complete-suite manifest.
 
-## Version and limitations
+## Included code
 
-Version: `menubench-data-v3-candidate-20261021`. Display-name cleanup and JPEG encoding
-do not change question IDs, answer labels, option order or image order. Raw webpage
-titles remain in source metadata for provenance; use `canonical_name_zh` for reviewed
-Chinese display names. No super-resolution or new evaluation was performed.
-Historical paper scores are not fresh measurements of these revised inputs.
+- `scripts/load_dataset.py`: joins and validates separately downloaded data.
+- `scripts/prepare_inputs.py`: exports ordered answer-free model requests.
+- `scripts/score.py`: strict offline scoring, identical to the v3 dataset scorer.
+- `scripts/verify_downloads.py`: portable streaming SHA256 verification.
+- `tests/`: offline unit and command-line tests using synthetic fixtures.
 
-The package retains known annotation/scope issues; consult `KNOWN_ISSUES.jsonl`.
-Inherited image cleaning may estimate hidden pixels, and residual overlays may remain.
-The tools do not certify semantic correctness or a completely watermark-free dataset.
+```bash
+python3 -m unittest discover -s tests -v
+```
 
-## License and data permissions
+## Citation and permissions
 
-Repository code is covered by the existing Apache-2.0 `LICENSE`.
-This code license does not grant rights to third-party recipe photographs or text.
-Dataset permissions, source attribution and a removal-request channel must be
-finalized before public dataset distribution. For the current paper citation,
-see the arXiv entry linked above.
+`CITATION.cff` is a carried-forward draft; confirm its author list and final publication
+metadata before public release. No new evaluation was performed for v3; historical
+paper scores are not measurements of the revised text/JPEG inputs.
+See [permissions](LICENSE_PENDING.md). Preprocessing does not grant permission to
+redistribute third-party recipe images or text. No open license is granted by this
+staging directory, and no absolute watermark-free claim is made.
